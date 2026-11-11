@@ -1,4 +1,5 @@
 // Pure logic (no network): Notion page parsing, bootstrap building, payload validation.
+import { MUSCLE_GROUPS, EQUIPMENT, EXERCISE_NAME_MAX } from "./exercise-options.js";
 
 export const DAY_TYPE_FALLBACK = [];
 
@@ -172,7 +173,7 @@ export function buildBootstrap({ exercises, sessions, sets, dayTypes, dayTemplat
   // Day Templates rows win; day types without rows keep the last-session template above.
   Object.assign(templates, buildDayTemplates(dayTemplates.filter((r) => !isPlanRow(r)), exercises, last));
   const plans = buildPlans(dayTemplates, exercises, last, planMinDate);
-  return { dayTypes, plans, exercises: exercises.map((e) => ({ id: e.id, name: e.name, muscle: e.muscle, equipment: e.equipment })), templates, last, history, lastDates, recent, summary };
+  return { dayTypes, muscleGroups: mergeMuscleGroups(exercises), equipmentOptions: EQUIPMENT, plans, exercises: exercises.map((e) => ({ id: e.id, name: e.name, muscle: e.muscle, equipment: e.equipment })), templates, last, history, lastDates, recent, summary };
 }
 
 /**
@@ -451,3 +452,57 @@ export function diffSession(current, desired, nameOf) {
   if (newHuman !== parts.human || orderChanged) sc.notes = mergeNotes(newHuman, parts.clientLine, orderChanged ? newOrder : (parts.orderIds ?? null));
   return { ok: true, session: Object.keys(sc).length ? sc : null, updates, creates, trashes };
 }
+
+// ---------------------------------------------------------------------------
+// Creating an exercise (POST /api/exercise)
+// ---------------------------------------------------------------------------
+export const MUSCLE_NAME_MAX = 40;
+const squash = (v) => String(v).replace(/\s+/g, " ").trim();
+const lower = (v) => squash(v).toLowerCase();
+/** Muscle groups offered by the app: the fixed shared list first, then custom ones found on existing exercises (A-Z, case-insensitive dedupe). */
+export function mergeMuscleGroups(exercises) {
+  const seen = new Set(MUSCLE_GROUPS.map(lower)), extra = [];
+  for (const e of exercises || []) {
+    const m = squash(e.muscle || "");
+    if (m && !seen.has(m.toLowerCase())) { seen.add(m.toLowerCase()); extra.push(m); }
+  }
+  return [...MUSCLE_GROUPS, ...extra.sort((a, b) => a.localeCompare(b))];
+}
+const MUSCLE_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} &'\/().-]*$/u;
+/**
+ * Validate a POST /api/exercise body: {name, muscle, equipment?, newMuscle?}.
+ * known = muscle groups that already exist (mergeMuscleGroups). With newMuscle:true, `muscle` is a custom group to be created
+ * (trimmed, <=40 chars, plain characters, not a case-insensitive duplicate of a known group); otherwise it must be one of `known`.
+ * Returns {ok:true,value:{name,muscle,equipment,newMuscle}} or {ok:false,error,conflict?}.
+ */
+export function validateNewExercise(b, known = MUSCLE_GROUPS) {
+  const bad = (error, conflict) => ({ ok: false, error, ...(conflict ? { conflict: true } : {}) });
+  if (!b || typeof b !== "object" || Array.isArray(b)) return bad("Body must be a JSON object");
+  if (typeof b.name !== "string") return bad("name required");
+  const name = squash(b.name);
+  if (!name) return bad("name required");
+  if (name.length > EXERCISE_NAME_MAX) return bad(`name must be at most ${EXERCISE_NAME_MAX} characters`);
+  if (/[\u0000-\u001f\u007f]/.test(name)) return bad("name contains invalid characters");
+  if (typeof b.muscle !== "string" || !b.muscle.trim()) return bad("muscle group required");
+  let muscle, newMuscle = false;
+  if (b.newMuscle === true) {
+    muscle = squash(b.muscle);
+    if (muscle.length < 2 || muscle.length > MUSCLE_NAME_MAX) return bad(`muscle group name must be 2-${MUSCLE_NAME_MAX} characters`);
+    if (!MUSCLE_NAME_RE.test(muscle)) return bad("muscle group name may only contain letters, numbers, spaces and & ' / ( ) . -");
+    const dup = known.find((m) => lower(m) === muscle.toLowerCase());
+    if (dup) return bad(`The muscle group "${dup}" already exists, choose it from the list`, true);
+    newMuscle = true;
+  } else {
+    if (b.newMuscle != null && b.newMuscle !== false) return bad("newMuscle must be true or false");
+    if (!known.includes(b.muscle)) return bad(`Unknown muscle group: ${b.muscle.slice(0, 40)}`);
+    muscle = b.muscle;
+  }
+  let equipment = "";
+  if (b.equipment != null && b.equipment !== "") {
+    if (typeof b.equipment !== "string" || !EQUIPMENT.includes(b.equipment)) return bad("Unknown equipment");
+    equipment = b.equipment;
+  }
+  return { ok: true, value: { name, muscle, equipment, newMuscle } };
+}
+/** The library entry whose name equals `name` ignoring case and extra spaces, or undefined. */
+export const findDuplicateExercise = (library, name) => library.find((e) => lower(e.name) === lower(name));

@@ -17,7 +17,8 @@ A Cloudflare Worker (`src/worker.js`) serves a PWA (`public/`) and an `/api` tha
 
 ## File map
 
-- `src/worker.js`: Worker entry. PIN check with KV lockout, Notion calls, `/api/bootstrap`, `/api/history`, `/api/sessions` (GET) and `/api/session` (POST create, GET/PATCH/DELETE by id). Notion data source ids come from env vars.
+- `src/worker.js`: Worker entry. PIN check with KV lockout, Notion calls, `/api/bootstrap`, `/api/exercise` (POST, create exercise), `/api/history`, `/api/sessions` (GET) and `/api/session` (POST create, GET/PATCH/DELETE by id). Notion data source ids come from env vars.
+- `src/exercise-options.js`: the shared muscle group / equipment lists (API validation, app dropdowns via bootstrap, `setup-notion.mjs`).
 - `src/plan.js`: Plan tab backend (validation, diff, `/api/plan` GET/PUT/DELETE) written against a small store interface (Notion in the Worker, in-memory in tests). Plans are stored as `Planned` rows in Day Templates (Name `Planned <date> - <exercise>`, Notes `plan:<date>` + `base:<day type>`), no schema change.
 - `src/logic.js`: pure functions (Notion parsing, bootstrap building, payload validation, `resolveDataSources`). All unit-tested.
 - `public/charts.js`: pure chart logic (series, PRs, ticks, SVG strings), used by the browser and by `test/charts.test.mjs`.

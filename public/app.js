@@ -168,17 +168,62 @@ function renderSession(app) {
 }
 function renderPicker(app, picker, pre = "") {
   if (picker.adding) {
-    app.innerHTML = `<h1>New exercise</h1><input id="nx-name" placeholder="Name" value="${esc(picker.q)}"><div style="height:8px"></div>
-      <select id="nx-muscle"><option value="">Muscle group (optional)</option>${["Chest","Back","Biceps","Triceps","Shoulders","Forearms","Quads","Glutes","Hamstrings","Calves","Core","Cardio"].map((m) => `<option>${m}</option>`).join("")}</select>
-      <div style="height:12px"></div><button class="pri" style="width:100%" data-a="${pre}nx-save">Add</button><div style="height:8px"></div><button style="width:100%" data-a="${pre}pick-close">Cancel</button>`;
+    const f = picker.form || (picker.form = newForm(picker.q)), groups = boot.muscleGroups || [], equip = boot.equipmentOptions || [];
+    const opt = (v, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(v)}</option>`;
+    app.innerHTML = `<h1>New exercise</h1>
+      <label class="lbl" for="nx-name">Name</label><input id="nx-name" placeholder="e.g. Cable Lateral Raise" maxlength="100" autocomplete="off" value="${esc(f.name)}">
+      <div style="height:8px"></div><label class="lbl" for="nx-muscle">Muscle group</label>
+      <select id="nx-muscle"><option value="">Choose a muscle group...</option>${groups.map((m) => opt(m, f.muscle)).join("")}<option value="__new" ${f.muscle === "__new" ? "selected" : ""}>Create new muscle group...</option></select>
+      ${f.muscle === "__new" ? `<div style="height:8px"></div><input id="nx-newmuscle" placeholder="New muscle group name" maxlength="40" autocomplete="off" aria-label="New muscle group name" value="${esc(f.newMuscle)}">` : ""}
+      ${equip.length ? `<div style="height:8px"></div><label class="lbl" for="nx-equip">Equipment (optional)</label>
+      <select id="nx-equip"><option value="">None / not set</option>${equip.map((m) => opt(m, f.equipment)).join("")}</select>` : ""}
+      ${f.err ? `<div class="note" role="alert" style="margin-top:10px">${esc(f.err)}</div>` : ""}
+      <div style="height:12px"></div><button class="pri" style="width:100%" data-a="${pre}nx-save" ${f.saving ? "disabled" : ""}>${f.saving ? "Saving..." : "Create and add"}</button>
+      <div style="height:8px"></div><button style="width:100%" data-a="${pre}nx-back" ${f.saving ? "disabled" : ""}>Back to search</button>`;
     return;
   }
   const q = picker.q.toLowerCase();
   const list = boot.exercises.filter((e) => e.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name));
   app.innerHTML = `<div class="row"><input id="pq" placeholder="Search exercises" value="${esc(picker.q)}"><button data-a="${pre}pick-close">Close</button></div>
-    <div class="list" style="margin-top:8px">${picker.noNew ? "" : `<button class="pri" data-a="${pre}nx-open">+ New exercise</button>`}
+    <div class="list" style="margin-top:8px"><button class="pri" data-a="${pre}nx-open">+ New exercise</button>
     ${list.map((e) => `<button data-a="${pre}pick" data-v="${esc(e.id)}">${esc(e.name)} <small>${esc(e.muscle)}</small></button>`).join("")}</div>`;
   const pq = $("#pq"); pq.focus(); pq.setSelectionRange(pq.value.length, pq.value.length);
+}
+
+// ---------- new exercise (shared by the Log, Plan and History pickers) ----------
+const newForm = (name = "") => ({ name, muscle: "", newMuscle: "", equipment: "", err: "", saving: false });
+const curPicker = () => (tab === "log" ? picker : tab === "plan" ? pl.picker : tab === "history" ? ed && ed.picker : null);
+const nxOpen = (p) => { p.form = newForm(($("#pq") || {}).value || p.q || ""); p.adding = true; p.q = p.form.name; render(); };
+const nxBack = (p) => { p.adding = false; p.form = null; render(); };
+/** Create the exercise in Notion via the Worker, add it to the in-app library, then call done(exercise) if this picker is still open. */
+async function nxSave(p, done) {
+  const f = p.form; if (!f || f.saving) return;
+  const name = f.name.replace(/\s+/g, " ").trim();
+  const fail = (m) => { f.err = m; f.saving = false; if (curPicker() === p) render(); };
+  if (!name) return fail("Enter a name.");
+  if (name.length > 100) return fail("The name can be at most 100 characters.");
+  if (!f.muscle) return fail("Choose a muscle group.");
+  const custom = f.muscle === "__new", muscle = custom ? f.newMuscle.replace(/\s+/g, " ").trim() : f.muscle;
+  if (custom) {
+    if (muscle.length < 2 || muscle.length > 40) return fail("The new muscle group needs a name of 2 to 40 characters.");
+    if (!/^[\p{L}\p{N}][\p{L}\p{N} &'\/().-]*$/u.test(muscle)) return fail("Muscle group names may only use letters, numbers, spaces and & ' / ( ) . -");
+    const same = (boot.muscleGroups || []).find((m) => m.toLowerCase() === muscle.toLowerCase());
+    if (same) return fail(`The muscle group "${same}" already exists, choose it from the list.`);
+  }
+  const dup = boot.exercises.find((e) => e.name.replace(/\s+/g, " ").trim().toLowerCase() === name.toLowerCase());
+  if (dup) return fail(`"${dup.name}" is already in your library. Go back to search and pick it.`);
+  if (!navigator.onLine) return fail("You're offline, creating an exercise needs a connection.");
+  f.saving = true; f.err = ""; render();
+  try {
+    const d = await api("/api/exercise", { method: "POST", body: JSON.stringify({ name, muscle, newMuscle: custom || undefined, equipment: f.equipment || undefined }) });
+    const ex = d.exercise;
+    boot = { ...boot, exercises: [...boot.exercises.filter((e) => e.id !== ex.id), ex], muscleGroups: d.muscleGroups || boot.muscleGroups }; LS.set("boot", boot);
+    toast(`Created ${ex.name}`, "ok");
+    if (curPicker() === p) done(ex); else render();
+  } catch (e) {
+    if (e.auth) return;
+    fail(e.status === 400 || e.status === 409 ? e.message : "Could not create it (" + (e.message || "network error") + "). Nothing was added, tap Create to retry.");
+  }
 }
 
 // ---------- plan tab ----------
@@ -264,6 +309,12 @@ async function deletePlan() {
 /** Click handler for Plan actions (all prefixed "pl"). Returns true when handled. */
 function planClick(a, t) {
   if (a === "plpick-close") { pl.picker = null; render(); return true; }
+  if (a === "plnx-open") { nxOpen(pl.picker); return true; }
+  if (a === "plnx-back") { nxBack(pl.picker); return true; }
+  if (a === "plnx-save") {
+    nxSave(pl.picker, (ex) => { pl.picker = null; pl.list = Plan.add(pl.list, ex); pl.msg = ""; render(); window.scrollTo(0, document.body.scrollHeight); });
+    return true;
+  }
   if (a === "plpick") {
     const ex = boot.exercises.find((e) => e.id === t.dataset.v); pl.picker = null;
     if (ex && pl.list.some((e) => e.exerciseId === ex.id)) toast(ex.name + " is already planned"); else if (ex) pl.list = Plan.add(pl.list, ex);
@@ -272,7 +323,7 @@ function planClick(a, t) {
   const sv = window.scrollY;
   if (a === "pldate") { if (planDirty() && !confirm("Discard your unsaved changes to this plan?")) return true; loadPlan(t.dataset.v); return true; }
   if (a === "plretry") { loadPlan(pl.date); return true; }
-  if (a === "plpicker") { pl.picker = { q: "", noNew: true }; render(); window.scrollTo(0, 0); return true; }
+  if (a === "plpicker") { pl.picker = { q: "" }; render(); window.scrollTo(0, 0); return true; }
   if (a === "plsave") { savePlan(); return true; }
   if (a === "pldelete") { deletePlan(); return true; }
   if (a === "plup" || a === "pldown") pl.list = Plan.move(pl.list, +t.dataset.e, a === "plup" ? -1 : 1);
@@ -573,13 +624,11 @@ async function histClick(a, t) {
   if (a === "hsave") { saveEdit(); return true; }
   if (a === "hdiscard") { if (confirm("Discard all your changes to this session?")) { resetEdit(); ed.msg = ""; render(); window.scrollTo(0, sv); } return true; }
   if (a === "hpick-close") { ed.picker = null; render(); return true; }
-  if (a === "hnx-open") { ed.picker.adding = true; ed.picker.q = $("#pq").value; render(); return true; }
+  if (a === "hnx-open") { nxOpen(ed.picker); return true; }
+  if (a === "hnx-back") { nxBack(ed.picker); return true; }
   if (a === "hnx-save") {
-    const name = $("#nx-name").value.trim(); if (!name) return true;
-    const dup = ed.cur.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
-    if (dup) { ed.picker = null; render(); toast(name + " is already in this session"); return true; }
-    ed.cur.exercises.push({ key: uid(), name, newExercise: { name, muscle: $("#nx-muscle").value || undefined }, sets: [newSet()] });
-    ed.picker = null; render(); window.scrollTo(0, document.body.scrollHeight); return true;
+    nxSave(ed.picker, (ex) => { ed.picker = null; ed.cur.exercises.push({ key: uid(), exerciseId: ex.id, name: ex.name, sets: [newSet()] }); render(); window.scrollTo(0, document.body.scrollHeight); });
+    return true;
   }
   if (a === "hpick") {
     const ex = boot.exercises.find((e) => e.id === t.dataset.v); ed.picker = null;
@@ -655,11 +704,11 @@ document.addEventListener("click", async (ev) => {
   if (a === "finish") return finish();
   if (a === "picker") { picker = { q: "" }; return render(); }
   if (a === "pick-close") { picker = null; return render(); }
-  if (a === "nx-open") { picker.adding = true; picker.q = $("#pq").value; return render(); }
-  if (a === "nx-save") {
-    const name = $("#nx-name").value.trim(); if (!name) return;
-    draft.exercises.push({ key: uid(), name, newExercise: { name, muscle: $("#nx-muscle").value || undefined }, sets: [blankSet()] });
-    picker = null; saveDraft(); return render();
+  if (a === "nx-open") return nxOpen(picker);
+  if (a === "nx-back") return nxBack(picker);
+  if (a === "nx-save") { // a brand-new exercise has no history: one blank set, no targets, no "last time"
+    nxSave(picker, (ex) => { addExercise(ex); picker = null; saveDraft(); render(); window.scrollTo(0, document.body.scrollHeight); });
+    return;
   }
   if (a === "pick") { addExercise(boot.exercises.find((e) => e.id === t.dataset.v)); picker = null; saveDraft(); return render(); }
   if (!draft) return;
@@ -681,6 +730,16 @@ document.addEventListener("click", async (ev) => {
 });
 document.addEventListener("input", (ev) => {
   const t = ev.target;
+  if (t.id && t.id.startsWith("nx-")) { // new-exercise form fields: keep values in the open picker (no re-render)
+    const p = curPicker(), f = p && p.form;
+    if (f && !f.saving) {
+      const was = f.muscle;
+      f[{ "nx-name": "name", "nx-muscle": "muscle", "nx-newmuscle": "newMuscle", "nx-equip": "equipment" }[t.id]] = t.value;
+      if (f.err) { f.err = ""; const n = document.querySelector("[role=alert]"); if (n) n.remove(); }
+      if (t.id === "nx-muscle" && (was === "__new" || f.muscle === "__new")) { render(); const nm = $("#nx-newmuscle"); if (nm) nm.focus(); } // show/hide the new-group name field
+    }
+    return;
+  }
   if (planInput(t)) return;
   if (histInput(t)) return;
   if (t.id === "notes" && draft) { draft.notes = t.value; return saveDraft(); }

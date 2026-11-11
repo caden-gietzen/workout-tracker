@@ -1,5 +1,5 @@
 // Service worker: app shell, stale-while-revalidate for static files; /api is never cached.
-const CACHE = "workout-shell-v4";
+const CACHE = "workout-shell-v5";
 const SHELL = ["/", "/index.html", "/app.js", "/charts.js", "/history.js", "/plan.js", "/style.css", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {

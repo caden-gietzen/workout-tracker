@@ -31,7 +31,7 @@ The four Notion databases:
 
 | Database | Purpose |
 | --- | --- |
-| Exercises | Name, Muscle Group, Equipment, Notes |
+| Exercises | Name, Muscle Group (select, see `src/exercise-options.js`), Equipment (select), Notes |
 | Sessions | One row per workout: Name, Date, Day Type, Notes |
 | Sets | One row per set: Session, Exercise, Set #, Weight (lb), Reps, Each Side, plus formulas Volume and Est. 1RM |
 | Day Templates | The planned lineup per day type: Day Type, Exercise, Order, Target Sets, Target Reps, Notes |
@@ -109,6 +109,14 @@ You do not create these by hand: a script does it.
 Open the **Day Templates** database in Notion. Each row is one exercise on one day type: set `Day Type`, pick the `Exercise`, give it an `Order` (1, 2, 3...), `Target Sets` and `Target Reps` (text such as `8-12` or `15 min`). Day types without any rows fall back to the exercises of your last session of that type.
 
 Day type names come from the options of the `Day Type` select on the **Sessions** database. Add or rename options there (and use the same names in Day Templates). Add exercises in the Exercises database or directly from the app. Changes appear within about 30 seconds (the Worker caches Notion data that long); reopen the app to reload.
+
+## Creating exercises in the app
+
+Both the Log tab (while logging) and the Plan tab (while planning) have **+ Add exercise**, and the picker starts with **+ New exercise**. The form asks for a name (required, at most 100 characters, must not match an existing exercise ignoring case) and a muscle group (required), plus an optional equipment choice. Saving writes the exercise to the Exercises database and adds it straight into the current workout or plan, with no reload. A brand-new exercise has no history, so the Log tab shows no targets or "last time", you enter sets, reps and weight as you log it, and after the first saved session it behaves like any other exercise (Progress, History).
+
+The muscle groups are one fixed list in `src/exercise-options.js` (chest, upper chest, lats, upper back, traps, lower back, front/side/rear delts, biceps, triceps, forearms, quads, hamstrings, glutes, adductors, abductors, calves, abs, obliques, hip flexors, neck, full body, cardio). The same constant validates the API, fills the dropdown (delivered in `/api/bootstrap` as `muscleGroups`) and creates the select options in `scripts/setup-notion.mjs`. The dropdown also offers **Create new muscle group...**: a custom name (2-40 characters, letters, numbers, spaces and `& ' / ( ) . -`, no case-insensitive duplicate of an existing group) is added the first time an exercise is saved with it (Notion creates the select option when a new value is written) and is listed after the fixed groups from then on, because `muscleGroups` in `/api/bootstrap` is the fixed list plus every other group found on existing exercises. Muscle groups already used by older exercises (for example Back, Shoulders, Core from the first version of the starter data) stay valid and are offered too.
+
+API: `POST /api/exercise` (`{name, muscle, equipment?, newMuscle?}`; `newMuscle: true` means `muscle` is a new custom group). Returns 201 `{exercise:{id,name,muscle,equipment}, muscleGroups, createdMuscleGroup}`; 400 for invalid input (bad name, unknown muscle group or equipment); 409 when the name or the new muscle group already exists. Same PIN and lockout as the other routes.
 
 ## Plan tab
 

@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync, existsSync, copyFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { MUSCLE_GROUPS, EQUIPMENT } from "../src/exercise-options.js"; // shared with the Worker validation and the app dropdowns
 
 const NOTION = "https://api.notion.com/v1";
 const VERSION = "2025-09-03";
@@ -62,8 +63,6 @@ async function api(method, path, body) {
 // ---------- schema ----------
 const opts = (names) => ({ select: { options: names.map((name) => ({ name })) } });
 const DAY_TYPES = ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Arms"];
-const MUSCLES = ["Chest", "Back", "Biceps", "Triceps", "Shoulders", "Forearms", "Quads", "Glutes", "Hamstrings", "Calves", "Core", "Cardio"];
-const EQUIPMENT = ["Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight"];
 
 const created = []; // what exists so far, reported on failure
 async function createDb(title, properties) {
@@ -81,11 +80,11 @@ async function createDb(title, properties) {
 
 const rt = (s) => [{ type: "text", text: { content: s } }];
 const SEED_EXERCISES = [
-  ["Barbell Bench Press", "Chest", "Barbell"], ["Dumbbell Bench Press", "Chest", "Dumbbell"], ["Incline Dumbbell Press", "Chest", "Dumbbell"],
+  ["Barbell Bench Press", "Chest", "Barbell"], ["Dumbbell Bench Press", "Chest", "Dumbbell"], ["Incline Dumbbell Press", "Upper Chest", "Dumbbell"],
   ["Cable Fly", "Chest", "Cable"], ["Chest Press Machine", "Chest", "Machine"], ["Push-Up", "Chest", "Bodyweight"],
-  ["Pull-Up", "Back", "Bodyweight"], ["Lat Pulldown", "Back", "Cable"], ["Barbell Row", "Back", "Barbell"], ["Seated Cable Row", "Back", "Cable"],
-  ["One-Arm Dumbbell Row", "Back", "Dumbbell"], ["Face Pull", "Back", "Cable"], ["Deadlift", "Back", "Barbell"],
-  ["Overhead Press", "Shoulders", "Barbell"], ["Dumbbell Shoulder Press", "Shoulders", "Dumbbell"], ["Lateral Raise", "Shoulders", "Dumbbell"], ["Rear Delt Fly", "Shoulders", "Machine"],
+  ["Pull-Up", "Lats", "Bodyweight"], ["Lat Pulldown", "Lats", "Cable"], ["Barbell Row", "Upper Back", "Barbell"], ["Seated Cable Row", "Upper Back", "Cable"],
+  ["One-Arm Dumbbell Row", "Lats", "Dumbbell"], ["Face Pull", "Rear Delts", "Cable"], ["Deadlift", "Lower Back", "Barbell"],
+  ["Overhead Press", "Front Delts", "Barbell"], ["Dumbbell Shoulder Press", "Front Delts", "Dumbbell"], ["Lateral Raise", "Side Delts", "Dumbbell"], ["Rear Delt Fly", "Rear Delts", "Machine"],
   ["Barbell Curl", "Biceps", "Barbell"], ["Dumbbell Curl", "Biceps", "Dumbbell"], ["Hammer Curl", "Biceps", "Dumbbell"], ["Cable Curl", "Biceps", "Cable"],
   ["Triceps Pushdown", "Triceps", "Cable"], ["Overhead Triceps Extension", "Triceps", "Cable"], ["Skull Crusher", "Triceps", "Barbell"], ["Dip", "Triceps", "Bodyweight"],
   ["Back Squat", "Quads", "Barbell"], ["Front Squat", "Quads", "Barbell"], ["Leg Press", "Quads", "Machine"], ["Leg Extension", "Quads", "Machine"],
@@ -93,7 +92,7 @@ const SEED_EXERCISES = [
   ["Romanian Deadlift", "Hamstrings", "Barbell"], ["Leg Curl", "Hamstrings", "Machine"],
   ["Hip Thrust", "Glutes", "Barbell"], ["Glute Bridge", "Glutes", "Bodyweight"],
   ["Standing Calf Raise", "Calves", "Machine"], ["Seated Calf Raise", "Calves", "Machine"],
-  ["Plank", "Core", "Bodyweight"], ["Hanging Leg Raise", "Core", "Bodyweight"], ["Cable Crunch", "Core", "Cable"],
+  ["Plank", "Abs", "Bodyweight"], ["Hanging Leg Raise", "Abs", "Bodyweight"], ["Cable Crunch", "Abs", "Cable"],
   ["Treadmill Run", "Cardio", "Machine"], ["Rowing Machine", "Cardio", "Machine"], ["Wrist Curl", "Forearms", "Dumbbell"],
 ];
 // [exercise, target sets, target reps]
@@ -137,7 +136,7 @@ async function main() {
   console.log("Creating databases...");
   const exercisesDs = await createDb("Exercises", {
     Name: { title: {} },
-    "Muscle Group": opts(MUSCLES),
+    "Muscle Group": opts(MUSCLE_GROUPS),
     Equipment: opts(EQUIPMENT),
     Notes: { rich_text: {} },
   });

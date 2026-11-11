@@ -1,5 +1,5 @@
 // Cloudflare Worker: static assets + /api/* proxy to Notion (Notion is only the database).
-import { resolveDataSources, parseExercise, parseSession, parseSet, parseDayTemplate, buildBootstrap, validateSession, sessionName, buildHistory, buildSessionList, buildSessionDetail, validateSessionPatch, diffSession, isNotionId, notesToRichText, planRowName, planNamePrefix, planNotes, isPlanRow } from "./logic.js";
+import { resolveDataSources, parseExercise, parseSession, parseSet, parseDayTemplate, buildBootstrap, validateSession, sessionName, buildHistory, buildSessionList, buildSessionDetail, validateSessionPatch, diffSession, isNotionId, notesToRichText, validateNewExercise, findDuplicateExercise, mergeMuscleGroups, planRowName, planNamePrefix, planNotes, isPlanRow } from "./logic.js";
 import { handlePlan } from "./plan.js";
 
 const NOTION = "https://api.notion.com/v1";
@@ -222,6 +222,26 @@ async function deleteSession(env, id) {
   return json({ deleted: true, sessionId: cur.page.id, setCount: cur.setPages.length });
 }
 
+/** POST /api/exercise: add one exercise to the Exercises database (name unique ignoring case). */
+async function createExercise(env, req) {
+  let body;
+  try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+  const library = (await queryAll(env, DS.exercises)).map(parseExercise);
+  const known = mergeMuscleGroups(library);
+  const v = validateNewExercise(body, known);
+  if (!v.ok) return json({ error: v.error }, v.conflict ? 409 : 400);
+  const e = v.value;
+  const dup = findDuplicateExercise(library, e.name);
+  if (dup) return json({ error: `"${dup.name}" already exists in your library`, exercise: { id: dup.id, name: dup.name, muscle: dup.muscle, equipment: dup.equipment } }, 409);
+  // A custom muscle group needs no schema call: Notion creates the select option when a new name is written (same reliance as resolveExercises and the "Planned" day type).
+  const props = { Name: { title: rt(e.name) }, "Muscle Group": { select: { name: e.muscle } } };
+  if (e.equipment) props.Equipment = { select: { name: e.equipment } };
+  let pg;
+  try { pg = await notion(env, "POST", "/pages", { parent: { type: "data_source_id", data_source_id: DS.exercises }, properties: props }); }
+  finally { invalidate(); }
+  return json({ exercise: { id: pg.id, name: e.name, muscle: e.muscle, equipment: e.equipment }, muscleGroups: mergeMuscleGroups([...library, { muscle: e.muscle }]), createdMuscleGroup: e.newMuscle }, 201);
+}
+
 async function createSession(env, req) {
   let body;
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
@@ -317,6 +337,7 @@ export default {
         return json(await history(env, id));
       }
       if (url.pathname === "/api/plan") return await handlePlan(req, url, planStore(env));
+      if (url.pathname === "/api/exercise" && req.method === "POST") return await createExercise(env, req);
       if (url.pathname === "/api/session" && req.method === "POST") return await createSession(env, req);
       if (url.pathname === "/api/sessions" && req.method === "GET") return json(await listSessions(env));
       if (url.pathname === "/api/session") {
