@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import "../public/charts.js";
 import "../public/plan.js";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import worker from "../src/worker.js";
 import { MUSCLE_GROUPS, EQUIPMENT } from "../src/exercise-options.js";
 import { validateNewExercise, findDuplicateExercise, mergeMuscleGroups, parseExercise } from "../src/logic.js";
@@ -51,7 +51,7 @@ test("shared muscle group list covers every required group and has no duplicates
   for (const m of ["Chest", "Upper Chest", "Lats", "Upper Back", "Traps", "Lower Back", "Front Delts", "Side Delts", "Rear Delts", "Biceps", "Triceps", "Forearms", "Quads", "Hamstrings", "Glutes", "Adductors", "Abductors", "Calves", "Abs", "Obliques", "Hip Flexors", "Neck", "Full Body", "Cardio"]) assert.ok(MUSCLE_GROUPS.includes(m), m);
   assert.equal(new Set(MUSCLE_GROUPS).size, MUSCLE_GROUPS.length);
 });
-test("setup script uses the shared constant (no private muscle list)", () => {
+test("setup script uses the shared constant (no private muscle list)", { skip: !existsSync(new URL("../scripts/setup-notion.mjs", import.meta.url)) && "scripts/ is not part of the deployed copy" }, () => {
   const src = readFileSync(new URL("../scripts/setup-notion.mjs", import.meta.url), "utf8");
   assert.match(src, /from "\.\.\/src\/exercise-options\.js"/);
   assert.match(src, /opts\(MUSCLE_GROUPS\)/);
