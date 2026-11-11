@@ -1,0 +1,3 @@
+# Copy to .dev.vars (gitignored) for local development with `npm run dev`.
+NOTION_KEY=paste_your_notion_integration_token_here
+APP_PIN=12345678

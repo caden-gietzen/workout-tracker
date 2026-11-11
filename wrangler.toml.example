@@ -1,0 +1,20 @@
+# TEMPLATE. Copy to wrangler.toml (git-ignored) and fill in your own ids: `cp wrangler.toml.example wrangler.toml`.
+name = "workout-tracker"   # becomes https://workout-tracker.<your-subdomain>.workers.dev (change if the name is taken)
+main = "src/worker.js"
+compatibility_date = "2025-11-01"
+assets = { directory = "./public", binding = "ASSETS" }
+# Secrets (NOT stored here; set with `npx wrangler secret put <NAME>`): NOTION_KEY, APP_PIN
+
+# Notion data source ids (not secret). `node scripts/setup-notion.mjs <parent>` prints these lines
+# (or run it with --write-config to fill them in automatically).
+[vars]
+EXERCISES_DS = "PASTE_ID_HERE"
+SESSIONS_DS = "PASTE_ID_HERE"
+SETS_DS = "PASTE_ID_HERE"
+TEMPLATES_DS = "PASTE_ID_HERE"
+
+# PIN lockout storage. Create the namespace with:  npx wrangler kv namespace create LOCK
+# then paste the id it prints below.
+[[kv_namespaces]]
+binding = "LOCK"
+id = "PASTE_KV_ID_HERE"

@@ -1,0 +1,12 @@
+node_modules
+.wrangler
+.dev.vars
+.env
+.env.*
+*.key
+notion-key.txt
+gym-pin.txt
+# your own config (copy from wrangler.toml.example); holds your Notion ids and KV id
+wrangler.toml
+*.pin
+pin.txt
